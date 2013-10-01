@@ -1,7 +1,7 @@
 <?php
 
 Flight::route('/', function(){
-    echo 'hello home controller!';
+    echo 'hello root controller!';
 });
 
 ?>
