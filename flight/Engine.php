@@ -94,7 +94,7 @@ class Engine {
         // Register framework methods
         $methods = array(
             'start','stop','route','halt','error','notFound',
-            'render','redirect','etag','lastModified','json'
+            'render','redirect','etag','lastModified','json','jsonp'
         );
         foreach ($methods as $name) {
             $this->dispatcher->set($name, array($this, '_'.$name));
@@ -273,10 +273,14 @@ class Engine {
      */
     public function _start() {
         $dispatched = false;
+        $self = $this;
+        $request = $this->request();
+        $response = $this->response();
+        $router = $this->router();
 
         // Flush any existing output
         if (ob_get_length() > 0) {
-            $this->response()->write(ob_get_contents());
+            $response->write(ob_get_clean());
         }
 
         // Enable output buffering
@@ -286,16 +290,19 @@ class Engine {
         $this->handleErrors($this->get('flight.handle_errors'));
 
         // Disable caching for AJAX requests
-        if ($this->request()->ajax) {
-            $this->response()->cache(false);
+        if ($request->ajax) {
+            $response->cache(false);
         }
 
         // Allow post-filters to run
-        $this->after('start', array($this, 'stop'));
+        $this->after('start', function() use ($self) {
+            $self->stop();
+        });
 
         // Route the request
-        while ($route = $this->router()->route($this->request())) {
+        while ($route = $router->route($request)) {
             $params = array_values($route->params);
+            array_push($params, $route);
 
             $continue = $this->dispatcher->execute(
                 $route->callback,
@@ -306,7 +313,7 @@ class Engine {
 
             if (!$continue) break;
 
-            $this->router()->next();
+            $router->next();
         }
 
         if (!$dispatched) {
@@ -316,9 +323,12 @@ class Engine {
 
     /**
      * Stops the framework and outputs the current response.
+     *
+     * @param int $code HTTP status code
      */
-    public function _stop() {
+    public function _stop($code = 200) {
         $this->response()
+            ->status($code)
             ->write(ob_get_clean())
             ->send();
     }
@@ -429,13 +439,37 @@ class Engine {
     /**
      * Sends a JSON response.
      *
-     * @param mixed $data Data to JSON encode
+     * @param mixed $data JSON data
+     * @param int $code HTTP status code
+     * @param bool $encode Whether to perform JSON encoding
      */
-    public function _json($data) {
-        $this->response()
-            ->status(200)
+    public function _json($data, $code = 200, $encode = true) {
+        $json = ($encode) ? json_encode($data) : $data;
+
+        $this->response(false)
+            ->status($code)
             ->header('Content-Type', 'application/json')
-            ->write(json_encode($data))
+            ->write($json)
+            ->send();
+    }
+	
+    /**
+     * Sends a JSONP response.
+     *
+     * @param mixed $data JSON data
+     * @param string $param Query parameter that specifies the callback name.
+     * @param int $code HTTP status code
+     * @param bool $encode Whether to perform JSON encoding
+     */
+    public function _jsonp($data, $param = 'jsonp', $code = 200, $encode = true) {
+        $json = ($encode) ? json_encode($data) : $data;
+
+        $callback = $this->request()->query[$param];
+
+        $this->response(false)
+            ->status($code)
+            ->header('Content-Type', 'application/javascript')
+            ->write($callback.'('.$json.');')
             ->send();
     }
 
@@ -450,7 +484,8 @@ class Engine {
 
         $this->response()->header('ETag', $id);
 
-        if ($id === getenv('HTTP_IF_NONE_MATCH')) {
+        if (isset($_SERVER['HTTP_IF_NONE_MATCH']) &&
+            $_SERVER['HTTP_IF_NONE_MATCH'] === $id) {
             $this->halt(304);
         }
     }
@@ -463,7 +498,8 @@ class Engine {
     public function _lastModified($time) {
         $this->response()->header('Last-Modified', date(DATE_RFC1123, $time));
 
-        if ($time === strtotime(getenv('HTTP_IF_MODIFIED_SINCE'))) {
+        if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) &&
+            strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']) === $time) {
             $this->halt(304);
         }
     }

@@ -132,23 +132,23 @@ class Request {
         // Default properties
         if (empty($config)) {
             $config = array(
-                'url' => getenv('REQUEST_URI') ?: '/',
-                'base' => str_replace(array('\\',' '), array('/','%20'), dirname(getenv('SCRIPT_NAME'))),
-                'method' => getenv('REQUEST_METHOD') ?: 'GET',
-                'referrer' => getenv('HTTP_REFERER') ?: '',
-                'ip' => getenv('REMOTE_ADDR') ?: '',
-                'ajax' => getenv('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest',
-                'scheme' => getenv('SERVER_PROTOCOL') ?: 'HTTP/1.1',
-                'user_agent' => getenv('HTTP_USER_AGENT') ?: '',
+                'url' => $this->getVar('REQUEST_URI', '/'),
+                'base' => str_replace(array('\\',' '), array('/','%20'), dirname($this->getVar('SCRIPT_NAME'))),
+                'method' => $this->getMethod(),
+                'referrer' => $this->getVar('HTTP_REFERER'),
+                'ip' => $this->getVar('REMOTE_ADDR'),
+                'ajax' => $this->getVar('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest',
+                'scheme' => $this->getVar('SERVER_PROTOCOL', 'HTTP/1.1'),
+                'user_agent' => $this->getVar('HTTP_USER_AGENT'),
                 'body' => file_get_contents('php://input'),
-                'type' => getenv('CONTENT_TYPE') ?: '',
-                'length' => getenv('CONTENT_LENGTH') ?: 0,
+                'type' => $this->getVar('CONTENT_TYPE'),
+                'length' => $this->getVar('CONTENT_LENGTH', 0),
                 'query' => new Collection($_GET),
                 'data' => new Collection($_POST),
                 'cookies' => new Collection($_COOKIE),
                 'files' => new Collection($_FILES),
-                'secure' => getenv('HTTPS') && getenv('HTTPS') != 'off',
-                'accept' => getenv('HTTP_ACCEPT') ?: '',
+                'secure' => $this->getVar('HTTPS', 'off') != 'off',
+                'accept' => $this->getVar('HTTP_ACCEPT'),
                 'proxy_ip' => $this->getProxyIpAddress()
             );
         }
@@ -198,6 +198,22 @@ class Request {
     }
 
     /**
+     * Gets the request method.
+     *
+     * @return string
+     */
+    private function getMethod() {
+        if (isset($_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'])) {
+            return $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'];
+        }
+        elseif (isset($_REQUEST['_method'])) {
+            return $_REQUEST['_method'];
+        }
+
+        return $this->getVar('REQUEST_METHOD', 'GET');
+    }
+
+    /**
      * Gets the real remote IP address.
      *
      * @return string IP address
@@ -224,5 +240,16 @@ class Request {
         }
 
         return '';
+    }
+
+    /**
+     * Gets a variable from $_SERVER using $default if not provided.
+     *
+     * @param string $var Variable name
+     * @param string $default Default value to substitute
+     * @return string Server variable value
+     */
+    private function getVar($var, $default = '') {
+        return isset($_SERVER[$var]) ? $_SERVER[$var] : $default;
     }
 }
